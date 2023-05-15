@@ -1,8 +1,7 @@
 import json
 import pandas as pd
-import csv
 import glob
-from datetime import datetime
+import os
 
 def add_attr(source, result, parent_key, table):
     """
@@ -128,29 +127,44 @@ def compare_json_with_csv(json_df_list, csv_df_list):
         else:
             print('Не найден csv: ', table_name)
 
-
-json_path = 'very_big_json.json' # json с данными
-csv_directory_path = 'csv'
 database = 'batp'
 exclude_columns = ['changeid', 'changetype', 'changetimestamp', 'hdp_processed_dttm']
-s2t_path = 'S2T_mapping.xlsx'
+root_directory = './test'
 
-json_schema = get_schema_from_s2t(s2t_path, exclude_columns)
-raw_json_list = get_json_dict_list(json_path)
 
-json_df_list = {}
+list_dir = os.listdir(root_directory)
+baseclass_dirs = {}     # словарь метакласс: адрес директории
+for item in list_dir:
+    if '.' not in item:
+        baseclass_dirs[item] = root_directory + '/' + item
 
-for json_item in raw_json_list:
-    json_data_dict = {}
-    root_name = database + '_' + json_item['meta']['BaseClass']
-    payload = json_item['payload']
-    records = payload[0]['Records'][0]
+for metaclass, path in baseclass_dirs.items():
+    filenames = os.listdir(path)
+    for name in filenames:
+        if '.' not in name:
+            csv_path = path + '/' + name
+        elif name[-5:] == '.xlsx':
+            s2t_path = path + '/' + name
+        elif name[-5:] == '.json':
+            json_path = path + '/' + name
 
-    add_attr(payload[0], json_data_dict, '', root_name)
-    del json_data_dict[root_name]
-    from_dict_to_df(json_data_dict, json_df_list, json_schema)
+    json_schema = get_schema_from_s2t(s2t_path, exclude_columns)
+    raw_json_list = get_json_dict_list(json_path)
 
-del json_data_dict
+    json_df_list = {}
 
-csv_df_list = get_csv_df_list(csv_directory_path, json_df_list)
-compare_json_with_csv(json_df_list, csv_df_list)
+    for json_item in raw_json_list:
+        json_data_dict = {}
+        root_name = database + '_' + json_item['meta']['BaseClass']
+        payload = json_item['payload']
+        records = payload[0]['Records'][0]
+
+        add_attr(payload[0], json_data_dict, '', root_name)
+        del json_data_dict[root_name]
+        from_dict_to_df(json_data_dict, json_df_list, json_schema)
+
+    del json_data_dict
+
+    csv_df_list = get_csv_df_list(csv_path, json_df_list)
+
+    compare_json_with_csv(json_df_list, csv_df_list)

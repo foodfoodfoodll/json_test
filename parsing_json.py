@@ -2,6 +2,15 @@ import json
 import pandas as pd
 import glob
 import os
+import csv
+
+def print_message(message, mode, path):
+    if mode == 'console':
+        print(message)
+    else:
+        f = open(path, "a")
+        f.write(message + '\n')
+        f.close()
 
 def add_attr(source, result, parent_key, table):
     """
@@ -33,7 +42,7 @@ def add_attr(source, result, parent_key, table):
                 else: 
                     add_attr(value[i], result, parent_key + '_' + key, table + '_' + key)
 
-def get_schema_from_s2t(s2t_path, exclude_columns):
+def get_schema_from_s2t(s2t_path):
     """
     s2t_path:       path s2t-файла
     Получение структура таблиц из s2t.
@@ -47,10 +56,21 @@ def get_schema_from_s2t(s2t_path, exclude_columns):
         schema[row[22]] = []
         for item in row[24]:
             item = item.lower().strip()
-            if item not in exclude_columns and item[-5:] != '_hash':
-                schema[row[22]].append(item)
+            schema[row[22]].append(item)
+            # if item not in exclude_columns and item[-5:] != '_hash':
+            #     schema[row[22]].append(item)
     return schema
 
+def exclude_tech_columns(schema, excluded_columns):
+    res = {}
+    for table, columns in schema.items():
+        if table not in res.keys():
+            res[table] = []
+        for item in columns:
+            if item not in excluded_columns and item[-5:] != '_hash':
+                res[table].append(item)
+    return res
+    
 def get_json_dict_list(json_path):
     """
     json_path:  path файла, в котором сохранены сообщения из кафки в формате json.
@@ -66,6 +86,46 @@ def get_json_dict_list(json_path):
             json_list.append(j)
     return json_list
 
+def compare_structures(path, json_schema, output_only_failures, output_mode, output_file_path):
+    res_equals_flag = True
+
+    for file in glob.glob(path + '\*.csv'):
+        df_csv = pd.read_csv(file)
+        csv_schema = list(df_csv)
+        table_name = file.split('\\')[-1].split('.')[0]
+        equals_flag = True
+        order_of_attributes = True
+        if len(json_schema[table_name]) > len(csv_schema):
+            equals_flag=False
+            message = table_name + '. CSV has no attributes: ' + str([item for item in json_schema[table_name] if item not in csv_schema])
+            print_message(message, output_mode, output_file_path)
+        elif len(json_schema[table_name]) < len(csv_schema):
+            equals_flag=False
+            message = table_name + '. S2T has no attributes: ' + str([item for item in csv_schema if item not in json_schema[table_name]])
+            print_message(message, output_mode, output_file_path)
+        elif len(json_schema[table_name]) == len(csv_schema):
+            for i in range(len(csv_schema)):
+                if json_schema[table_name][i] != csv_schema[i]:
+                    equals_flag = False
+                    order_of_attributes = False
+            if not order_of_attributes:
+                sorted_csv = sorted(csv_schema)
+                sorted_json = sorted(json_schema[table_name])
+                if sorted_csv == sorted_json:
+                    equals_flag = False #закомментрировать, если не ошибка
+                    message = table_name + '. The order of the attributes does not match, but the aliases are correct'
+                    print_message(message, output_mode, output_file_path)
+                else:
+                    equals_flag = False
+                    message = table_name + '. The aliases are not correct'
+                    print_message(message, output_mode, output_file_path)
+        if equals_flag:
+            if not output_only_failures:
+                message = table_name + '. The structure is correct'
+                print_message(message, output_mode, output_file_path)
+        res_equals_flag *= equals_flag
+    return res_equals_flag
+
 def get_csv_df_list(csv_directory_path, json_df_list):
     """
     csv_directory_path:     директория, в которой хранятся csv-файлы
@@ -80,8 +140,8 @@ def get_csv_df_list(csv_directory_path, json_df_list):
     for file in glob.glob(csv_directory_path + '\*.csv'):
         df_csv = pd.read_csv(file)
         #df_csv = df_csv.replace({numpy.nan: None})
-        #Добавить проверку на метакласс
         table_name = file.split('\\')[-1].split('.')[0]
+
         df_csv = df_csv[list(json_df_list[table_name])]
         list_df_csv[table_name] = pd.DataFrame(data=df_csv)
     return list_df_csv
@@ -107,7 +167,7 @@ def from_dict_to_df(json_list, json_df_list, json_schema):
         else:
             json_df_list[table_name] = pd.concat([json_df_list[table_name], tmp_df]) 
 
-def compare_json_with_csv(json_df_list, csv_df_list):
+def compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, output_mode, output_file_path, output_examples):
     """
     json_df_list:       список датафреймов, полученных из json
     csv_df_list:        список датафреймов, полученных из csv
@@ -120,35 +180,51 @@ def compare_json_with_csv(json_df_list, csv_df_list):
             df = pd.concat([json_df_list[table_name], csv_df_list[table_name]]) 
             df = df.drop_duplicates(keep=False)
             if len(df) == 0:
-                print('Данные совпадают: ', table_name)
+                if not output_only_failures:
+                    print_message(table_name + '. the data match', output_mode, output_file_path)
             else:
-                print('Данные не совпадают: ', table_name)
-                print(df)
+                print_message(table_name + '. the data does not match', output_mode, output_file_path)
+                if output_examples:
+                    print_message(df.to_string(), output_mode, output_file_path)
         else:
-            print('Не найден csv: ', table_name)
+            print_message(table_name + '. csv-file not found', output_mode, output_file_path)
 
-database = 'batp'
-exclude_columns = ['changeid', 'changetype', 'changetimestamp', 'hdp_processed_dttm']
-root_directory = './test'
+config_path = 'config.json'
 
+with open(config_path, 'r', encoding="utf-8") as file:
+    config = json.load(file)
+
+database = config['database_name']
+excluded_columns = config['exclude_columns']
+root_directory = config['source_directory']
+output_mode = config['output_mode']
+output_file_path = config['output_file_path']
+output_only_failures = config['output_only_failures']
+output_examples = config['output_examples']
+#куда выводить результаты: в консоль или в файл
 
 list_dir = os.listdir(root_directory)
 baseclass_dirs = {}     # словарь метакласс: адрес директории
 for item in list_dir:
     if '.' not in item:
-        baseclass_dirs[item] = root_directory + '/' + item
+        baseclass_dirs[item] = root_directory + '\\' + item
 
 for metaclass, path in baseclass_dirs.items():
     filenames = os.listdir(path)
     for name in filenames:
         if '.' not in name:
-            csv_path = path + '/' + name
+            csv_path = path + '\\' + name
         elif name[-5:] == '.xlsx':
-            s2t_path = path + '/' + name
+            s2t_path = path + '\\' + name
         elif name[-5:] == '.json':
-            json_path = path + '/' + name
+            json_path = path + '\\' + name
 
-    json_schema = get_schema_from_s2t(s2t_path, exclude_columns)
+    full_json_schema = get_schema_from_s2t(s2t_path)
+    # if not compare_structures(csv_path, full_json_schema):
+    #     break
+
+    json_schema_without_tech = exclude_tech_columns(full_json_schema, excluded_columns)
+
     raw_json_list = get_json_dict_list(json_path)
 
     json_df_list = {}
@@ -161,10 +237,11 @@ for metaclass, path in baseclass_dirs.items():
 
         add_attr(payload[0], json_data_dict, '', root_name)
         del json_data_dict[root_name]
-        from_dict_to_df(json_data_dict, json_df_list, json_schema)
+        from_dict_to_df(json_data_dict, json_df_list, json_schema_without_tech)
 
     del json_data_dict
 
     csv_df_list = get_csv_df_list(csv_path, json_df_list)
 
-    compare_json_with_csv(json_df_list, csv_df_list)
+    compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, output_mode, output_file_path, output_examples)
+

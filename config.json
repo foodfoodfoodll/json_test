@@ -1,0 +1,9 @@
+{
+    "database_name": "batp",
+    "exclude_columns": ["changeid", "changetype", "changetimestamp", "hdp_processed_dttm"],
+    "source_directory": ".\\test",
+    "output_mode": "file",
+    "output_file_path": "result.txt",
+    "output_only_failures": false,
+    "output_examples": true
+}

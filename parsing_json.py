@@ -8,9 +8,8 @@ def print_message(message, mode, path):
     if mode == 'console':
         print(message)
     else:
-        f = open(path, "a")
-        f.write(message + '\n')
-        f.close()
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(message + '\n')
 
 def add_attr(source, result, parent_key, table):
     """
@@ -97,11 +96,13 @@ def compare_structures(path, json_schema, output_only_failures, output_mode, out
         order_of_attributes = True
         if len(json_schema[table_name]) > len(csv_schema):
             equals_flag=False
-            message = table_name + '. CSV has no attributes: ' + str([item for item in json_schema[table_name] if item not in csv_schema])
+            # message = table_name + '. CSV has no attributes: ' + str([item for item in json_schema[table_name] if item not in csv_schema])
+            message = table_name + '. В csv нет атрибутов, которые есть в S2T: ' + str([item for item in json_schema[table_name] if item not in csv_schema])
             print_message(message, output_mode, output_file_path)
         elif len(json_schema[table_name]) < len(csv_schema):
             equals_flag=False
-            message = table_name + '. S2T has no attributes: ' + str([item for item in csv_schema if item not in json_schema[table_name]])
+            # message = table_name + '. S2T has no attributes: ' + str([item for item in csv_schema if item not in json_schema[table_name]])
+            message = table_name + '. В S2T нет атрибутов, которые есть в csv: ' + str([item for item in csv_schema if item not in json_schema[table_name]])
             print_message(message, output_mode, output_file_path)
         elif len(json_schema[table_name]) == len(csv_schema):
             for i in range(len(csv_schema)):
@@ -113,15 +114,18 @@ def compare_structures(path, json_schema, output_only_failures, output_mode, out
                 sorted_json = sorted(json_schema[table_name])
                 if sorted_csv == sorted_json:
                     equals_flag = False #закомментрировать, если не ошибка
-                    message = table_name + '. The order of the attributes does not match, but the aliases are correct'
+                    # message = table_name + '. The order of the attributes does not match, but the aliases are correct'
+                    message = table_name + '. Не совпадает порядок атрибутов, но названия корректны.'
                     print_message(message, output_mode, output_file_path)
                 else:
                     equals_flag = False
-                    message = table_name + '. The aliases are not correct'
+                    # message = table_name + '. The aliases are not correct'
+                    message = table_name + '. Не совпадают названия атрибутов.'
                     print_message(message, output_mode, output_file_path)
         if equals_flag:
             if not output_only_failures:
-                message = table_name + '. The structure is correct'
+                # message = table_name + '. The structure is correct'
+                message = table_name + '. Структуры в S2T и csv совпадают.'
                 print_message(message, output_mode, output_file_path)
         res_equals_flag *= equals_flag
     return res_equals_flag
@@ -181,13 +185,16 @@ def compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, outpu
             df = df.drop_duplicates(keep=False)
             if len(df) == 0:
                 if not output_only_failures:
-                    print_message(table_name + '. the data match', output_mode, output_file_path)
+                    # print_message(table_name + '. the data match', output_mode, output_file_path)
+                    print_message(table_name + '. Данные совпадают.', output_mode, output_file_path)
             else:
-                print_message(table_name + '. the data does not match', output_mode, output_file_path)
+                # print_message(table_name + '. the data does not match', output_mode, output_file_path)
+                print_message(table_name + '. Данные не совпадают.', output_mode, output_file_path)
                 if output_examples:
-                    print_message(df.to_string(), output_mode, output_file_path)
+                    print_message(df.to_string() + '\n', output_mode, output_file_path)
         else:
-            print_message(table_name + '. csv-file not found', output_mode, output_file_path)
+            # print_message(table_name + '. csv-file not found', output_mode, output_file_path)
+            print_message(table_name + '. csv для этой таблицы не найден.', output_mode, output_file_path)
 
 config_path = 'config.json'
 
@@ -201,6 +208,7 @@ output_mode = config['output_mode']
 output_file_path = config['output_file_path']
 output_only_failures = config['output_only_failures']
 output_examples = config['output_examples']
+continue_if_the_structure_does_not_match = config['continue_if_the_structure_does_not_match']
 #куда выводить результаты: в консоль или в файл
 
 list_dir = os.listdir(root_directory)
@@ -220,8 +228,9 @@ for metaclass, path in baseclass_dirs.items():
             json_path = path + '\\' + name
 
     full_json_schema = get_schema_from_s2t(s2t_path)
-    # if not compare_structures(csv_path, full_json_schema):
-    #     break
+
+    if not continue_if_the_structure_does_not_match and not compare_structures(csv_path, full_json_schema, output_only_failures, output_mode, output_file_path):
+        break
 
     json_schema_without_tech = exclude_tech_columns(full_json_schema, excluded_columns)
 

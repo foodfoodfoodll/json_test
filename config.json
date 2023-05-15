@@ -2,8 +2,9 @@
     "database_name": "batp",
     "exclude_columns": ["changeid", "changetype", "changetimestamp", "hdp_processed_dttm"],
     "source_directory": ".\\test",
+    "continue_if_the_structure_does_not_match": true,
     "output_mode": "file",
     "output_file_path": "result.txt",
-    "output_only_failures": false,
+    "output_only_failures": true,
     "output_examples": true
 }

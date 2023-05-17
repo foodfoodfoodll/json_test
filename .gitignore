@@ -6,3 +6,6 @@
 *.csv
 *.xlsx
 *.txt
+test.py
+create_class.py
+schema_json_csv.py

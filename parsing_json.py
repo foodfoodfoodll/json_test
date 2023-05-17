@@ -5,11 +5,11 @@ import os
 import csv
 
 def print_message(message, mode, path):
-    if mode == 'console':
-        print(message)
-    else:
+    if mode:
         with open(path, 'a', encoding='utf-8') as f:
-            f.write(message + '\n')
+            f.write(message + '\n') 
+    else:
+        print(message)
 
 def add_attr(source, result, parent_key, table):
     """
@@ -56,8 +56,6 @@ def get_schema_from_s2t(s2t_path):
         for item in row[24]:
             item = item.lower().strip()
             schema[row[22]].append(item)
-            # if item not in exclude_columns and item[-5:] != '_hash':
-            #     schema[row[22]].append(item)
     return schema
 
 def exclude_tech_columns(schema, excluded_columns):
@@ -85,7 +83,7 @@ def get_json_dict_list(json_path):
             json_list.append(j)
     return json_list
 
-def compare_structures(path, json_schema, output_only_failures, output_mode, output_file_path):
+def compare_structures(path, json_schema, output_only_failures, output_in_file, output_file_path):
     res_equals_flag = True
 
     for file in glob.glob(path + '\*.csv'):
@@ -98,12 +96,12 @@ def compare_structures(path, json_schema, output_only_failures, output_mode, out
             equals_flag=False
             # message = table_name + '. CSV has no attributes: ' + str([item for item in json_schema[table_name] if item not in csv_schema])
             message = table_name + '. В csv нет атрибутов, которые есть в S2T: ' + str([item for item in json_schema[table_name] if item not in csv_schema])
-            print_message(message, output_mode, output_file_path)
+            print_message(message, output_in_file, output_file_path)
         elif len(json_schema[table_name]) < len(csv_schema):
             equals_flag=False
             # message = table_name + '. S2T has no attributes: ' + str([item for item in csv_schema if item not in json_schema[table_name]])
             message = table_name + '. В S2T нет атрибутов, которые есть в csv: ' + str([item for item in csv_schema if item not in json_schema[table_name]])
-            print_message(message, output_mode, output_file_path)
+            print_message(message, output_in_file, output_file_path)
         elif len(json_schema[table_name]) == len(csv_schema):
             for i in range(len(csv_schema)):
                 if json_schema[table_name][i] != csv_schema[i]:
@@ -116,17 +114,17 @@ def compare_structures(path, json_schema, output_only_failures, output_mode, out
                     equals_flag = False #закомментрировать, если не ошибка
                     # message = table_name + '. The order of the attributes does not match, but the aliases are correct'
                     message = table_name + '. Не совпадает порядок атрибутов, но названия корректны.'
-                    print_message(message, output_mode, output_file_path)
+                    print_message(message, output_in_file, output_file_path)
                 else:
                     equals_flag = False
                     # message = table_name + '. The aliases are not correct'
                     message = table_name + '. Не совпадают названия атрибутов.'
-                    print_message(message, output_mode, output_file_path)
+                    print_message(message, output_in_file, output_file_path)
         if equals_flag:
             if not output_only_failures:
                 # message = table_name + '. The structure is correct'
                 message = table_name + '. Структуры в S2T и csv совпадают.'
-                print_message(message, output_mode, output_file_path)
+                print_message(message, output_in_file, output_file_path)
         res_equals_flag *= equals_flag
     return res_equals_flag
 
@@ -171,7 +169,7 @@ def from_dict_to_df(json_list, json_df_list, json_schema):
         else:
             json_df_list[table_name] = pd.concat([json_df_list[table_name], tmp_df]) 
 
-def compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, output_mode, output_file_path, output_examples):
+def compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, output_in_file, output_file_path, output_examples):
     """
     json_df_list:       список датафреймов, полученных из json
     csv_df_list:        список датафреймов, полученных из csv
@@ -185,16 +183,16 @@ def compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, outpu
             df = df.drop_duplicates(keep=False)
             if len(df) == 0:
                 if not output_only_failures:
-                    # print_message(table_name + '. the data match', output_mode, output_file_path)
-                    print_message(table_name + '. Данные совпадают.', output_mode, output_file_path)
+                    # print_message(table_name + '. the data match', output_in_file, output_file_path)
+                    print_message(table_name + '. Данные совпадают.', output_in_file, output_file_path)
             else:
-                # print_message(table_name + '. the data does not match', output_mode, output_file_path)
-                print_message(table_name + '. Данные не совпадают.', output_mode, output_file_path)
+                # print_message(table_name + '. the data does not match', output_in_file, output_file_path)
+                print_message(table_name + '. Данные не совпадают.', output_in_file, output_file_path)
                 if output_examples:
-                    print_message(df.to_string() + '\n', output_mode, output_file_path)
+                    print_message(df.to_string() + '\n', output_in_file, output_file_path)
         else:
-            # print_message(table_name + '. csv-file not found', output_mode, output_file_path)
-            print_message(table_name + '. csv для этой таблицы не найден.', output_mode, output_file_path)
+            # print_message(table_name + '. csv-file not found', output_in_file, output_file_path)
+            print_message(table_name + '. Не найден csv для этой таблицы.', output_in_file, output_file_path)
 
 config_path = 'config.json'
 
@@ -204,12 +202,12 @@ with open(config_path, 'r', encoding="utf-8") as file:
 database = config['database_name']
 excluded_columns = config['exclude_columns']
 root_directory = config['source_directory']
-output_mode = config['output_mode']
+output_in_file = config['output_in_file']  #true = file, false = console
+
 output_file_path = config['output_file_path']
 output_only_failures = config['output_only_failures']
 output_examples = config['output_examples']
 continue_if_the_structure_does_not_match = config['continue_if_the_structure_does_not_match']
-#куда выводить результаты: в консоль или в файл
 
 list_dir = os.listdir(root_directory)
 baseclass_dirs = {}     # словарь метакласс: адрес директории
@@ -218,23 +216,55 @@ for item in list_dir:
         baseclass_dirs[item] = root_directory + '\\' + item
 
 for metaclass, path in baseclass_dirs.items():
+    print_message(metaclass, output_in_file, output_file_path)
     filenames = os.listdir(path)
     for name in filenames:
         if '.' not in name:
             csv_path = path + '\\' + name
-        elif name[-5:] == '.xlsx':
+        elif name[-5:] == '.xlsx' and name[:2] != '~$':
             s2t_path = path + '\\' + name
         elif name[-5:] == '.json':
             json_path = path + '\\' + name
+    # full_json_schema = get_schema_from_s2t(s2t_path)
+    try:
+        full_json_schema = get_schema_from_s2t(s2t_path)
+    except NameError as ex:
+        print_message('Не найден файл с S2T', output_in_file, output_file_path)
+        continue
+    except PermissionError as ex:
+        print_message(ex, output_in_file, output_file_path)
+        continue
+    except FileNotFoundError as ex:
+        print_message(ex, output_in_file, output_file_path)
+        continue
+    except Exception as ex:
+        print_message('Ошибка при попытке чтения S2T', output_in_file, output_file_path)
+        continue
 
-    full_json_schema = get_schema_from_s2t(s2t_path)
-
-    if not continue_if_the_structure_does_not_match and not compare_structures(csv_path, full_json_schema, output_only_failures, output_mode, output_file_path):
-        break
+    if not continue_if_the_structure_does_not_match and not compare_structures(csv_path, full_json_schema, output_only_failures, output_in_file, output_file_path):
+        continue
 
     json_schema_without_tech = exclude_tech_columns(full_json_schema, excluded_columns)
+    
+    # raw_json_list = get_json_dict_list(json_path)
 
-    raw_json_list = get_json_dict_list(json_path)
+    try:
+        raw_json_list = get_json_dict_list(json_path)
+    except NameError as ex:
+        print_message('Не найден файл с json', output_in_file, output_file_path)
+        continue
+    except PermissionError as ex:
+        print_message(ex, output_in_file, output_file_path)
+        continue
+    except FileNotFoundError as ex:
+        print_message(ex, output_in_file, output_file_path)
+        continue
+    except json.decoder.JSONDecodeError as ex:
+        print_message(ex, output_in_file, output_file_path)
+        continue
+    except Exception as ex:
+        print_message(metaclass +'. Ошибка при чтении файла с json.', output_in_file, output_file_path)
+        continue
 
     json_df_list = {}
 
@@ -250,7 +280,20 @@ for metaclass, path in baseclass_dirs.items():
 
     del json_data_dict
 
-    csv_df_list = get_csv_df_list(csv_path, json_df_list)
+    try:
+        csv_df_list = get_csv_df_list(csv_path, json_df_list)
+    except NameError as ex:
+        print_message('Не найда директория с csv-файлами', output_in_file, output_file_path)
+        continue
+    except PermissionError as ex:
+        print_message(ex, output_in_file, output_file_path)
+        continue
+    except FileNotFoundError as ex:
+        print_message(ex, output_in_file, output_file_path)
+        continue
+    except:
+        print_message(metaclass +'. Ошибка при чтении csv-файлов.', output_in_file, output_file_path)
 
-    compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, output_mode, output_file_path, output_examples)
+    compare_json_with_csv(json_df_list, csv_df_list, output_only_failures, output_in_file, output_file_path, output_examples)
 
+    print_message('\n\n', output_in_file, output_file_path)
